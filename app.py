@@ -50,7 +50,7 @@ if st.session_state.step == "input":
 
     with col1:
         name = st.text_input("👤 Name")
-        age = st.number_input("🎂 Age", 1, 100, 30)
+        age = st.number_input(" Age", 1, 100, 30)
 
     with col2:
         gender = st.radio("⚧ Gender", ["Male", "Female", "Others"])
@@ -223,3 +223,4 @@ Status: {"High Risk" if pred else "Low Risk"}
     if st.button("⬅ Back to Entry Page"):
         st.session_state.step = "input"
         st.rerun()
+
