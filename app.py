@@ -1,42 +1,3 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import os
-import datetime
-from sklearn.linear_model import LogisticRegression
-
-# ----------------------------------
-# PAGE CONFIG
-# ----------------------------------
-st.set_page_config(
-    page_title="Diabetes Risk Prediction",
-    layout="wide"
-)
-
-# ----------------------------------
-# SESSION STATE INIT
-# ----------------------------------
-if "step" not in st.session_state:
-    st.session_state.step = "input"
-
-# ----------------------------------
-# LOAD & TRAIN MODEL
-# ----------------------------------
-@st.cache_data
-def load_data():
-    return pd.read_csv("pima_diabetes.csv")
-
-df = load_data()
-df = df.drop(columns=["Insulin", "SkinThickness", "DiabetesPedigreeFunction"])
-df["FamilyHistory"] = np.random.randint(0, 2, len(df))
-
-X = df[["Pregnancies", "Glucose", "BloodPressure", "BMI", "Age", "FamilyHistory"]]
-y = df["Outcome"]
-
-model = LogisticRegression(max_iter=1000)
-model.fit(X, y)
-
 # ==================================
 # PAGE 1 : INPUT PAGE
 # ==================================
@@ -50,7 +11,7 @@ if st.session_state.step == "input":
 
     with col1:
         name = st.text_input("👤 Name")
-        age = st.number_input(" Age", 1, 100, 0)
+        age = st.number_input(" Age", min_value=1, max_value=100, value=25)
 
     with col2:
         gender = st.radio("⚧ Gender", ["Male", "Female", "Others"])
@@ -61,12 +22,22 @@ if st.session_state.step == "input":
     col3, col4 = st.columns(2)
 
     with col3:
-        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 200, 120)
-        bmi = st.number_input("⚖ BMI", 10.0, 60.0, 25.0)
+        glucose = st.number_input(
+            "🧪 Glucose (mg/dL)", min_value=50, max_value=200, value=120
+        )
+        bmi = st.number_input(
+            "⚖ BMI", min_value=10.0, max_value=60.0, value=25.0
+        )
 
     with col4:
-        bp = st.number_input("💓 Blood Pressure", 40, 150, 80)
-        pregnancies = st.number_input("🤰 Pregnancies", 0, 10, 0) if gender == "Female" else 0
+        bp = st.number_input(
+            "💓 Blood Pressure (mmHg)", min_value=40, max_value=150, value=80
+        )
+        pregnancies = (
+            st.number_input("🤰 Pregnancies", min_value=0, max_value=10, value=0)
+            if gender == "Female"
+            else 0
+        )
 
     family = st.radio("👪 Family History of Diabetes", ["No", "Yes"])
     family_val = 1 if family == "Yes" else 0
@@ -115,7 +86,6 @@ if st.session_state.step == "input":
 
         st.session_state.step = "result"
         st.rerun()
-
 # ==================================
 # PAGE 2 : RESULT PAGE
 # ==================================
@@ -126,17 +96,21 @@ if st.session_state.step == "result":
     user_df = st.session_state.user_df
     meta = st.session_state.meta
 
+    # ---- Prediction Probability ----
     prob = model.predict_proba(user_df)[0][1] * 100
-  prob = model.predict_proba(user_df)[0][1] * 100
 
-if prob < 30:
-    st.success(f"🟢 LOW RISK ({prob:.2f}%)")
-elif prob < 60:
-    st.warning(f"🟡 MODERATE RISK ({prob:.2f}%)")
-else:
-    st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
+    # ---- Risk Classification ----
+    if prob < 30:
+        risk_label = "LOW RISK"
+        st.success(f"🟢 LOW RISK ({prob:.2f}%)")
+    elif prob < 60:
+        risk_label = "MODERATE RISK"
+        st.warning(f"🟡 MODERATE RISK ({prob:.2f}%)")
+    else:
+        risk_label = "HIGH RISK"
+        st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
 
-    # -------- PIE CHART (SMALL & CENTERED) --------
+    # -------- PIE CHART --------
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         fig, ax = plt.subplots(figsize=(2.4, 2.4))
@@ -149,7 +123,7 @@ else:
             textprops={'fontsize': 8}
         )
         ax.axis("equal")
-        st.pyplot(fig, clear_figure=True)
+        st.pyplot(fig)
         plt.close(fig)
 
     # ---- COMPARISON CHART ----
@@ -173,6 +147,7 @@ else:
         "BMI": meta["BMI"],
         "FamilyHistory": meta["FamilyHistory"],
         "RiskPercent": round(prob, 2),
+        "RiskLevel": risk_label,
         "Timestamp": datetime.datetime.now()
     }])
 
@@ -185,23 +160,26 @@ else:
 
     # ---- GENDER ANALYTICS ----
     st.subheader("👥 Gender-wise Analytics")
-if os.path.exists(log_file):
-    hist_df = pd.read_csv(log_file)
 
-    col1, col2 = st.columns(2)
+    if os.path.exists(log_file):
+        hist_df = pd.read_csv(log_file)
 
-    with col1:
-        st.markdown("**Gender Count**")
-        st.bar_chart(hist_df["Gender"].value_counts())
+        col1, col2 = st.columns(2)
 
-    with col2:
-        st.markdown("**Average Risk % by Gender**")
-        st.bar_chart(hist_df.groupby("Gender")["RiskPercent"].mean())
-else:
-    st.info("📌 Gender analytics will appear after multiple predictions.")
+        with col1:
+            st.markdown("**Gender Count**")
+            st.bar_chart(hist_df["Gender"].value_counts())
+
+        with col2:
+            st.markdown("**Average Risk % by Gender**")
+            st.bar_chart(hist_df.groupby("Gender")["RiskPercent"].mean())
+    else:
+        st.info("📌 Gender analytics will appear after multiple predictions.")
+
     # ---- HISTORY ----
     with st.expander("📄 View Prediction History"):
-        st.dataframe(hist_df)
+        if os.path.exists(log_file):
+            st.dataframe(pd.read_csv(log_file))
 
     # ---- DOWNLOAD ----
     report = f"""
@@ -214,7 +192,7 @@ Glucose: {meta['Glucose']}
 BMI: {meta['BMI']}
 Blood Pressure: {meta['BP']}
 Risk Probability: {prob:.2f}%
-Status: {"High Risk" if pred else "Low Risk"}
+Risk Level: {risk_label}
 """
 
     st.download_button(
@@ -226,6 +204,3 @@ Status: {"High Risk" if pred else "Low Risk"}
     if st.button("⬅ Back to Entry Page"):
         st.session_state.step = "input"
         st.rerun()
-
-
-
