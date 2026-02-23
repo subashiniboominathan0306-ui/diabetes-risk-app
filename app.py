@@ -50,7 +50,7 @@ if st.session_state.step == "input":
 
     with col1:
         name = st.text_input("👤 Name")
-        age = st.number_input(" Age", 1, 100, 30)
+        age = st.number_input(" Age", 1, 100, 0)
 
     with col2:
         gender = st.radio("⚧ Gender", ["Male", "Female", "Others"])
@@ -61,7 +61,7 @@ if st.session_state.step == "input":
     col3, col4 = st.columns(2)
 
     with col3:
-        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 300, 120)
+        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 200, 120)
         bmi = st.number_input("⚖ BMI", 10.0, 60.0, 25.0)
 
     with col4:
@@ -184,6 +184,7 @@ if st.session_state.step == "result":
     # ---- GENDER ANALYTICS ----
     st.subheader("👥 Gender-wise Analytics")
 
+   if os.path.exists(log_file):
     hist_df = pd.read_csv(log_file)
 
     col1, col2 = st.columns(2)
@@ -195,7 +196,8 @@ if st.session_state.step == "result":
     with col2:
         st.markdown("**Average Risk % by Gender**")
         st.bar_chart(hist_df.groupby("Gender")["RiskPercent"].mean())
-
+else:
+    st.info("📌 Gender analytics will appear after multiple predictions.")
     # ---- HISTORY ----
     with st.expander("📄 View Prediction History"):
         st.dataframe(hist_df)
@@ -223,4 +225,5 @@ Status: {"High Risk" if pred else "Low Risk"}
     if st.button("⬅ Back to Entry Page"):
         st.session_state.step = "input"
         st.rerun()
+
 
