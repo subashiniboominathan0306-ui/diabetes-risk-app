@@ -127,12 +127,14 @@ if st.session_state.step == "result":
     meta = st.session_state.meta
 
     prob = model.predict_proba(user_df)[0][1] * 100
-    pred = model.predict(user_df)[0]
+  prob = model.predict_proba(user_df)[0][1] * 100
 
-    if pred == 0:
-        st.success(f"🟢 LOW RISK ({100 - prob:.2f}%)")
-    else:
-        st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
+if prob < 30:
+    st.success(f"🟢 LOW RISK ({prob:.2f}%)")
+elif prob < 60:
+    st.warning(f"🟡 MODERATE RISK ({prob:.2f}%)")
+else:
+    st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
 
     # -------- PIE CHART (SMALL & CENTERED) --------
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -183,8 +185,7 @@ if st.session_state.step == "result":
 
     # ---- GENDER ANALYTICS ----
     st.subheader("👥 Gender-wise Analytics")
-
-   if os.path.exists(log_file):
+if os.path.exists(log_file):
     hist_df = pd.read_csv(log_file)
 
     col1, col2 = st.columns(2)
@@ -225,5 +226,6 @@ Status: {"High Risk" if pred else "Low Risk"}
     if st.button("⬅ Back to Entry Page"):
         st.session_state.step = "input"
         st.rerun()
+
 
 
