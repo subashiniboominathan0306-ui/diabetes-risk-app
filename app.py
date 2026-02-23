@@ -47,24 +47,19 @@ if st.session_state.step == "input":
     st.divider()
 
     col1, col2 = st.columns(2)
-
     with col1:
         name = st.text_input("👤 Name")
-        age = st.number_input("Age", 1, 100, 1)
-
+        age = st.number_input("🎂 Age", 1, 100, 35)
     with col2:
         gender = st.radio("⚧ Gender", ["Male", "Female", "Others"])
 
     st.subheader("🧬 Medical Details")
-
     col3, col4 = st.columns(2)
-
     with col3:
-        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 200, 50)
-        bmi = st.number_input("⚖ BMI", 10.0, 60.0, 10.0)
-
+        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 200, 130)
+        bmi = st.number_input("⚖ BMI", 10.0, 60.0, 28.0)
     with col4:
-        bp = st.number_input("💓 Blood Pressure", 40, 150, 40)
+        bp = st.number_input("💓 Blood Pressure", 40, 150, 85)
         pregnancies = st.number_input("🤰 Pregnancies", 0, 10, 0) if gender == "Female" else 0
 
     family = st.radio("👪 Family History of Diabetes", ["No", "Yes"])
@@ -75,13 +70,11 @@ if st.session_state.step == "input":
         st.radio("Gestational Diabetes", ["No", "Yes"])
         st.radio("PCOS", ["No", "Yes"])
         st.selectbox("Menopause Status", ["Pre-menopause", "Post-menopause"])
-
     elif gender == "Male":
         st.subheader("👨 Male-Specific Health Details")
         st.number_input("Waist Circumference (cm)", 50, 150, 50)
         st.radio("Central Obesity", ["No", "Yes"])
         st.selectbox("Stress Level", ["Low", "Moderate", "High"])
-
     else:
         st.subheader("⚧ Inclusive Health Details")
         hormone = st.radio("On Hormone Therapy", ["No", "Yes"])
@@ -91,7 +84,6 @@ if st.session_state.step == "input":
     st.divider()
 
     if st.button("🔮 Predict Diabetes Risk", use_container_width=True):
-
         st.session_state.user_df = pd.DataFrame([{
             "Pregnancies": pregnancies,
             "Glucose": glucose,
@@ -100,7 +92,6 @@ if st.session_state.step == "input":
             "Age": age,
             "FamilyHistory": family_val
         }])
-
         st.session_state.meta = {
             "Name": name,
             "Gender": gender,
@@ -110,7 +101,6 @@ if st.session_state.step == "input":
             "BP": bp,
             "FamilyHistory": family
         }
-
         st.session_state.step = "result"
         st.rerun()
 
@@ -120,44 +110,70 @@ if st.session_state.step == "input":
 if st.session_state.step == "result":
 
     st.title("📊 Prediction Result")
-
     user_df = st.session_state.user_df
     meta = st.session_state.meta
+    prob = model.predict_proba(user_df)[0][1]
 
-    prob = model.predict_proba(user_df)[0][1] * 100
-    pred = model.predict(user_df)[0]
-
-    if pred == 0:
-        st.success(f"🟢 LOW RISK ({prob:.2f}%)")
+    # -----------------------------
+    # Probability-based Risk Levels
+    # -----------------------------
+    if prob < 0.3:
+        risk = "LOW"
+        st.success(f"🟢 LOW RISK ({prob*100:.2f}%)")
+        sizes = [prob]
+        labels = ["Low Risk"]
+        colors = ["green"]
+    elif prob < 0.6:
+        risk = "MODERATE"
+        st.warning(f"🟡 MODERATE RISK ({prob*100:.2f}%)")
+        sizes = [prob]
+        labels = ["Moderate Risk"]
+        colors = ["yellow"]
     else:
-        st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
+        risk = "HIGH"
+        st.error(f"🔴 HIGH RISK ({prob*100:.2f}%)")
+        sizes = [prob]
+        labels = ["High Risk"]
+        colors = ["red"]
 
+    # Normalize to 100%
+    total = sum(sizes)
+    sizes = [s / total for s in sizes]
+
+    # -----------------------------
+    # Pie chart showing only predicted risk
+    # -----------------------------
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        fig, ax = plt.subplots(figsize=(2.4, 2.4))
-        ax.pie(
-            [100 - prob, prob],
-            labels=["Low Risk", "High Risk"],
+        fig, ax = plt.subplots(figsize=(4, 4))
+        wedges, texts, autotexts = ax.pie(
+            sizes,
+            labels=labels,
             autopct="%1.0f%%",
             startangle=90,
-            colors=["green", "red"],
-            textprops={'fontsize': 8}
+            colors=colors,
+            textprops={'fontsize': 12},
+            labeldistance=1.1,
+            pctdistance=0.7
         )
         ax.axis("equal")
         st.pyplot(fig)
         plt.close(fig)
 
+    # -----------------------------
+    # User vs Normal Comparison
+    # -----------------------------
     st.subheader("📊 User vs Normal Comparison")
-
     compare_df = pd.DataFrame({
         "Normal": [100, 22, 80],
         "User": [meta["Glucose"], meta["BMI"], meta["BP"]]
     }, index=["Glucose", "BMI", "Blood Pressure"])
-
     st.bar_chart(compare_df)
 
+    # -----------------------------
+    # Logging predictions
+    # -----------------------------
     log_file = "prediction_log.csv"
-
     log_row = pd.DataFrame([{
         "Name": meta["Name"],
         "Gender": meta["Gender"],
@@ -165,10 +181,9 @@ if st.session_state.step == "result":
         "Glucose": meta["Glucose"],
         "BMI": meta["BMI"],
         "FamilyHistory": meta["FamilyHistory"],
-        "RiskPercent": round(prob, 2),
+        "RiskPercent": round(prob*100, 2),
         "Timestamp": datetime.datetime.now()
     }])
-
     log_row.to_csv(
         log_file,
         mode="a",
@@ -176,8 +191,10 @@ if st.session_state.step == "result":
         index=False
     )
 
+    # -----------------------------
+    # Gender-wise analytics
+    # -----------------------------
     st.subheader("👥 Gender-wise Analytics")
-
     try:
         hist_df = pd.read_csv(log_file, engine="python", on_bad_lines="skip")
     except FileNotFoundError:
@@ -186,18 +203,18 @@ if st.session_state.step == "result":
 
     if not hist_df.empty:
         col1, col2 = st.columns(2)
-
         with col1:
             st.markdown("**Gender Count**")
             st.bar_chart(hist_df["Gender"].value_counts())
-
         with col2:
             st.markdown("**Average Risk % by Gender**")
             st.bar_chart(hist_df.groupby("Gender")["RiskPercent"].mean())
-
         with st.expander("📄 View Prediction History"):
             st.dataframe(hist_df)
 
+    # -----------------------------
+    # Downloadable report
+    # -----------------------------
     report = f"""
 Diabetes Risk Assessment Report
 -------------------------------
@@ -207,10 +224,9 @@ Age: {meta['Age']}
 Glucose: {meta['Glucose']}
 BMI: {meta['BMI']}
 Blood Pressure: {meta['BP']}
-Risk Probability: {prob:.2f}%
-Status: {"High Risk" if pred else "Low Risk"}
+Risk Probability: {prob*100:.2f}%
+Status: {risk} Risk
 """
-
     st.download_button(
         "📥 Download Medical Report",
         report,
