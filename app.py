@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 import joblib
 import os
 import datetime
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 
 # ==================================
 # PAGE CONFIG
@@ -19,22 +22,52 @@ st.set_page_config(
 )
 
 # ==================================
-# SESSION STATE INIT (VERY IMPORTANT)
+# SESSION STATE INIT
 # ==================================
 if "step" not in st.session_state:
     st.session_state.step = "input"
 
 # ==================================
-# LOAD MODEL
+# LOAD DATASET
+# ==================================
+@st.cache_data
+def load_data():
+    return pd.read_csv("pima_diabetes.csv")
+
+df = load_data()
+
+# ==================================
+# TRAIN / LOAD MODEL
 # ==================================
 @st.cache_resource
-def load_model():
-    return joblib.load("diabetes_model.pkl")  # make sure this file exists
+def get_model():
+    if os.path.exists("diabetes_model.pkl"):
+        return joblib.load("diabetes_model.pkl")
 
-model = load_model()
+    # ---- TRAIN MODEL IF NOT EXISTS ----
+    X = df.drop("Outcome", axis=1)
+    y = df["Outcome"]
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.2, random_state=42
+    )
+
+    model = LogisticRegression()
+    model.fit(X_train, y_train)
+
+    joblib.dump(model, "diabetes_model.pkl")
+    joblib.dump(scaler, "scaler.pkl")
+
+    return model
+
+model = get_model()
+scaler = joblib.load("scaler.pkl")
 
 # ==================================
-# PAGE 1 : INPUT PAGE
+# PAGE 1 : INPUT
 # ==================================
 if st.session_state.step == "input":
 
@@ -46,114 +79,88 @@ if st.session_state.step == "input":
 
     with col1:
         name = st.text_input("👤 Name")
-        age = st.number_input(" Age", min_value=1, max_value=100, value=25)
+        age = st.number_input("Age", 1, 100, 25)
 
     with col2:
-        gender = st.radio("⚧ Gender", ["Male", "Female", "Others"])
+        gender = st.radio("Gender", ["Male", "Female", "Others"])
 
     st.subheader("🧬 Medical Details")
 
     col3, col4 = st.columns(2)
 
     with col3:
-        glucose = st.number_input("🧪 Glucose (mg/dL)", 50, 300, 120)
-        bmi = st.number_input("⚖ BMI", 10.0, 60.0, 25.0)
+        glucose = st.number_input("Glucose (mg/dL)", 50, 300, 120)
+        bmi = st.number_input("BMI", 10.0, 60.0, 25.0)
 
     with col4:
-        bp = st.number_input("💓 Blood Pressure (mmHg)", 40, 150, 80)
+        bp = st.number_input("Blood Pressure", 40, 150, 80)
         pregnancies = st.number_input(
-            "🤰 Pregnancies", 0, 10, 0
+            "Pregnancies", 0, 10, 0
         ) if gender == "Female" else 0
 
-    family = st.radio("👪 Family History of Diabetes", ["No", "Yes"])
+    family = st.radio("Family History of Diabetes", ["No", "Yes"])
     family_val = 1 if family == "Yes" else 0
 
-    st.divider()
+    if st.button("🔮 Predict Risk", use_container_width=True):
 
-    if st.button("🔮 Predict Diabetes Risk", use_container_width=True):
-
-        st.session_state.user_df = pd.DataFrame([{
+        user_df = pd.DataFrame([{
             "Pregnancies": pregnancies,
             "Glucose": glucose,
             "BloodPressure": bp,
+            "SkinThickness": 20,
+            "Insulin": 80,
             "BMI": bmi,
-            "Age": age,
-            "FamilyHistory": family_val
+            "DiabetesPedigreeFunction": 0.5,
+            "Age": age
         }])
 
+        user_scaled = scaler.transform(user_df)
+
+        st.session_state.user_scaled = user_scaled
         st.session_state.meta = {
             "Name": name,
             "Gender": gender,
             "Age": age,
             "Glucose": glucose,
             "BMI": bmi,
-            "BP": bp,
-            "FamilyHistory": family
+            "BP": bp
         }
 
         st.session_state.step = "result"
         st.rerun()
 
 # ==================================
-# PAGE 2 : RESULT PAGE
+# PAGE 2 : RESULT
 # ==================================
 if st.session_state.step == "result":
 
     st.title("📊 Prediction Result")
 
-    user_df = st.session_state.user_df
-    meta = st.session_state.meta
+    prob = model.predict_proba(st.session_state.user_scaled)[0][1] * 100
 
-    # ---- PREDICTION ----
-    prob = model.predict_proba(user_df)[0][1] * 100
-
-    # ---- RISK CLASSIFICATION (FIXED LOGIC) ----
     if prob < 35:
-        risk_label = "LOW RISK"
+        risk = "LOW RISK"
         st.success(f"🟢 LOW RISK ({prob:.2f}%)")
     elif prob < 65:
-        risk_label = "MODERATE RISK"
+        risk = "MODERATE RISK"
         st.warning(f"🟡 MODERATE RISK ({prob:.2f}%)")
     else:
-        risk_label = "HIGH RISK"
+        risk = "HIGH RISK"
         st.error(f"🔴 HIGH RISK ({prob:.2f}%)")
 
     # ---- PIE CHART ----
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        fig, ax = plt.subplots(figsize=(3, 3))
-        ax.pie(
-            [100 - prob, prob],
-            labels=["Low Risk", "High Risk"],
-            autopct="%1.0f%%",
-            startangle=90
-        )
-        ax.axis("equal")
-        st.pyplot(fig)
-        plt.close()
+    fig, ax = plt.subplots()
+    ax.pie([100 - prob, prob], labels=["Low", "High"], autopct="%1.0f%%")
+    st.pyplot(fig)
 
-    # ---- COMPARISON CHART ----
-    st.subheader("📊 User vs Normal Comparison")
-
-    compare_df = pd.DataFrame({
-        "Normal": [100, 22, 80],
-        "User": [meta["Glucose"], meta["BMI"], meta["BP"]]
-    }, index=["Glucose", "BMI", "Blood Pressure"])
-
-    st.bar_chart(compare_df)
-
-    # ---- SAVE LOG ----
+    # ---- LOG SAVE ----
     log_file = "prediction_log.csv"
-
     log_row = pd.DataFrame([{
-        "Name": meta["Name"],
-        "Gender": meta["Gender"],
-        "Age": meta["Age"],
-        "Glucose": meta["Glucose"],
-        "BMI": meta["BMI"],
-        "FamilyHistory": meta["FamilyHistory"],
+        "Name": st.session_state.meta["Name"],
+        "Gender": st.session_state.meta["Gender"],
+        "Age": st.session_state.meta["Age"],
         "RiskPercent": round(prob, 2),
-        "RiskLevel": risk_label,
+        "RiskLevel": risk,
         "Timestamp": datetime.datetime.now()
     }])
 
@@ -164,45 +171,6 @@ if st.session_state.step == "result":
         index=False
     )
 
-    # ---- GENDER ANALYTICS ----
-    st.subheader("👥 Gender-wise Analytics")
-
-    hist_df = pd.read_csv(log_file)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("**Gender Count**")
-        st.bar_chart(hist_df["Gender"].value_counts())
-
-    with col2:
-        st.markdown("**Average Risk % by Gender**")
-        st.bar_chart(hist_df.groupby("Gender")["RiskPercent"].mean())
-
-    # ---- HISTORY ----
-    with st.expander("📄 View Prediction History"):
-        st.dataframe(hist_df)
-
-    # ---- DOWNLOAD REPORT ----
-    report = f"""
-Diabetes Risk Assessment Report
--------------------------------
-Name: {meta['Name']}
-Gender: {meta['Gender']}
-Age: {meta['Age']}
-Glucose: {meta['Glucose']}
-BMI: {meta['BMI']}
-Blood Pressure: {meta['BP']}
-Risk Probability: {prob:.2f}%
-Risk Level: {risk_label}
-"""
-
-    st.download_button(
-        "📥 Download Medical Report",
-        report,
-        file_name="diabetes_report.txt"
-    )
-
-    if st.button("⬅ Back to Entry Page"):
+    if st.button("⬅ Back"):
         st.session_state.step = "input"
         st.rerun()
